@@ -162,7 +162,7 @@ class MetadataSynchronizerTest(unittest.TestCase):
 
         self.__synchronizer.run()
 
-        scraper.scrape_dashboard.assert_called_once()
+        scraper.get_dashboard.assert_called_once()
 
         mapper = mock_mapper.return_value
         mapper.fulfill_tag_fields.assert_called_once()
@@ -182,11 +182,11 @@ class MetadataSynchronizerTest(unittest.TestCase):
         lookml_folder = self.__make_fake_folder()
         lookml_folder.dashboards = [self.__make_fake_dashboard(lookml_folder)]
         scraper.scrape_folder.return_value = lookml_folder
-        scraper.scrape_dashboard.side_effect = error.SDKError('SDK error')
+        scraper.get_dashboard.side_effect = error.SDKError('SDK error')
 
         self.__synchronizer.run()
 
-        scraper.scrape_dashboard.assert_called_once()
+        scraper.get_dashboard.assert_called_once()
 
         mapper = mock_mapper.return_value
         mapper.fulfill_tag_fields.assert_called_once()

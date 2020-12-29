@@ -17,7 +17,10 @@
 from functools import lru_cache
 import logging
 
-from looker_sdk import client, error
+from looker_sdk import error
+
+from google.datacatalog_connectors.looker.scrape import \
+    looker_facade
 
 
 class MetadataScraper:
@@ -33,15 +36,15 @@ class MetadataScraper:
                     'last_viewed_at,deleted,deleter_id'
 
     def __init__(self, looker_credentials_file):
-        self.__sdk = client.setup(looker_credentials_file)
+        self.__looker_facade = looker_facade.LookerFacade(
+            looker_credentials_file)
 
     def scrape_dashboard(self, dashboard_id):
         self.__log_scrape_start('Scraping dashboard by id: %s...',
                                 dashboard_id)
 
         try:
-            dashboard = self.__sdk.dashboard(dashboard_id=dashboard_id)
-            self.__log_single_object_scrape_result(dashboard)
+            dashboard = self.__looker_facade.get_dashboard(dashboard_id=dashboard_id)
         except error.SDKError as e:
             logging.info('API call failed...')
             logging.info(e)
@@ -57,20 +60,13 @@ class MetadataScraper:
         #
         # Please notice "lookml" dashboards are not included in
         # search_dashboards response and need a special handling.
-        dashboards = self.__sdk.search_dashboards(
+        return self.__looker_facade.search_dashboards(
             fields=self.__DASHBOARD_FIELDS)
-
-        logging.info('%s dashboards found:', len(dashboards))
-        for dashboard in dashboards:
-            logging.info('%s/%s [%s]', dashboard.space.name, dashboard.title,
-                         dashboard.id)
-
-        return dashboards
 
     def scrape_dashboards_from_folder(self, folder):
         self.__log_scrape_start('Scraping "%s" folder dashboards...',
                                 folder.name)
-        dashboards = self.__sdk.search_dashboards(
+        dashboards = self.__looker_facade.search_dashboards_by_id(
             space_id=folder.id, fields=self.__DASHBOARD_FIELDS)
 
         logging.info('%s dashboards found:', len(dashboards))
@@ -81,11 +77,9 @@ class MetadataScraper:
 
     def scrape_folder(self, folder_id):
         self.__log_scrape_start('Scraping folder by id: %s...', folder_id)
-        folder = self.__sdk.folder(
+        return self.__looker_facade.get_folder(
             folder_id=folder_id,
             fields=f'{self.__FOLDER_FIELDS},dashboards,looks')
-        self.__log_single_object_scrape_result(folder)
-        return folder
 
     def scrape_all_folders(self):
         self.__log_scrape_start('Scraping all folders...')
@@ -94,82 +88,45 @@ class MetadataScraper:
         # connector actually needs, so search_folders is used here.
         #
         # Also, empty folders are not included in all_folders response.
-        folders = self.__sdk.search_folders(fields=self.__FOLDER_FIELDS)
-
-        logging.info('%s folders found:', len(folders))
-        for folder in folders:
-            logging.info('%s [%s]', folder.name, folder.id)
-
-        return folders
+        return self.__looker_facade.search_folders(fields=self.__FOLDER_FIELDS)
 
     def scrape_top_level_folders(self):
         self.__log_scrape_start('Scraping top-level folders...')
-        folders = self.__sdk.search_folders(fields=self.__FOLDER_FIELDS,
-                                            parent_id='IS NULL')
-
-        logging.info('%s folders found:', len(folders))
-        for folder in folders:
-            logging.info('/%s [%s]', folder.name, folder.id)
-
-        return folders
+        return self.__looker_facade.search_top_level_folders(fields=self.__FOLDER_FIELDS)
 
     def scrape_child_folders(self, parent_folder):
         self.__log_scrape_start('Scraping "%s" children...',
                                 parent_folder.name)
-        folders = self.__sdk.folder_children(folder_id=parent_folder.id,
-                                             fields=self.__FOLDER_FIELDS)
-
-        logging.info('%s folders found:', len(folders))
-        for folder in folders:
-            logging.info('%s/%s [%s]', parent_folder.name, folder.name,
-                         folder.id)
-
-        return folders
+        return self.__looker_facade.get_child_folders(
+            parent_folder_id=parent_folder.id,
+            fields=self.__FOLDER_FIELDS)
 
     def scrape_look(self, look_id):
         self.__log_scrape_start('Scraping look by id: %s...', look_id)
-        look = self.__sdk.look(look_id=look_id)
-        self.__log_single_object_scrape_result(look)
-        return look
+        return self.__looker_facade.get_look(look_id=look_id)
 
     def scrape_all_looks(self):
         self.__log_scrape_start('Scraping all looks...')
 
         # The all_looks method response does not include all fields the
         # connector actually needs, so search_looks is used here.
-        looks = self.__sdk.search_looks(fields=self.__LOOK_FIELDS)
-
-        logging.info('%s looks found:', len(looks))
-        for look in looks:
-            logging.info('%s/%s [%s]', look.space.name, look.title, look.id)
-
-        return looks
+        return self.__looker_facade.search_looks(fields=self.__LOOK_FIELDS)
 
     def scrape_looks_from_folder(self, folder):
         self.__log_scrape_start('Scraping "%s" folder looks...', folder.name)
-        looks = self.__sdk.search_looks(space_id=folder.id,
-                                        fields=self.__LOOK_FIELDS)
-
-        logging.info('%s looks found:', len(looks))
-        for look in looks:
-            logging.info('%s [%s]', look.title, look.id)
-
-        return looks
+        return self.__looker_facade.search_looks_by_id(space_id=folder.id,
+                                                       fields=self.__LOOK_FIELDS)
 
     @lru_cache(maxsize=1024)
     def scrape_query(self, query_id):
         self.__log_scrape_start('Scraping query by id: %s...', query_id)
-        query = self.__sdk.query(query_id=query_id)
-        self.__log_single_object_scrape_result(query)
-        return query
+        return self.__looker_facade.get_query(query_id=query_id)
 
     @lru_cache(maxsize=1024)
     def scrape_query_generated_sql(self, query_id):
         self.__log_scrape_start('Scraping generated SQL by query id: %s...',
                                 query_id)
-        sql = self.__sdk.run_query(query_id=query_id, result_format='sql')
-        self.__log_single_object_scrape_result(sql)
-        return sql
+        return self.__looker_facade.get_query_result(query_id=query_id)
 
     @lru_cache(maxsize=1024)
     def scrape_lookml_model_explore(self, model_name, explore_name):
@@ -178,23 +135,19 @@ class MetadataScraper:
             explore_name)
 
         try:
-            model = self.__sdk.lookml_model_explore(
-                lookml_model_name=model_name, explore_name=explore_name)
+            model = self.__looker_facade.get_lookml_model_explore(
+                model_name=model_name, explore_name=explore_name)
         except error.SDKError as e:
             logging.info('API call failed...')
             logging.info(e)
             raise
 
-        self.__log_single_object_scrape_result(model)
         return model
 
-    @lru_cache(maxsize=128)
     def scrape_connection(self, connection_name):
         self.__log_scrape_start('Scraping connection by name: %s...',
                                 connection_name)
-        connection = self.__sdk.connection(connection_name=connection_name)
-        self.__log_single_object_scrape_result(connection)
-        return connection
+        return self.__looker_facade.get_connection(connection_name=connection_name)
 
     @classmethod
     def __log_scrape_start(cls, message, *args):
@@ -202,6 +155,3 @@ class MetadataScraper:
         logging.info(message, *args)
         logging.info('-------------------------------------------------')
 
-    @classmethod
-    def __log_single_object_scrape_result(cls, the_object):
-        logging.info('Found!' if the_object else 'NOT found!')
